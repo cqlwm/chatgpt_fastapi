@@ -110,11 +110,12 @@ class Chatbot:
         prompt,
         conversation_id=None,
         parent_id=None,
-        timeout=360,
+        timeout=500,
         # gen_title=True,
     ):
         """
         Ask a question to the chatbot
+        :param timeout:
         :param prompt: String
         :param conversation_id: UUID
         :param parent_id: UUID
@@ -166,7 +167,7 @@ class Chatbot:
             url=BASE_URL + "api/conversation",
             data=json.dumps(data),
             timeout=timeout,
-            stream=True,
+            stream=False,
         )
         self.__check_response(response)
         for line in response.iter_lines():
