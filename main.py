@@ -1,6 +1,7 @@
 import json
 import logging
-
+import uuid
+import requests
 import uvicorn as uvicorn
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
@@ -15,6 +16,15 @@ logger = (lambda log: (
     log.setLevel(logging.INFO),
     log.info("setLevel INFO")
 ))(logging.getLogger(__name__))[0]
+
+
+def e_termination(msg: str, e):
+    detail = json.dumps({
+        "msg": msg,
+        "e_id": str(uuid.uuid4())
+    })
+    logger.info(msg=detail, exc_info=e)
+    return ChatBaseException(detail=detail)
 
 
 class BaseResponse:
@@ -37,11 +47,9 @@ def FailedResponse(body: dict):
 
 
 class ChatBaseException(HTTPException):
-    def __init__(self, simple_message: str, exc_info: Exception):
-        super().__init__(status_code=200, detail=BaseResponse(code='600', body={
-            "simple_message": simple_message,
-            "exc_info": exc_info,
-        }))
+
+    def __init__(self, detail=None):
+        super().__init__(status_code=200, detail={"code": '600', "body": detail})
 
 
 class AskRequest(BaseModel):
@@ -57,9 +65,7 @@ def create_chatbot(config: dict):
         bot = Chatbot(config=config)
         return bot
     except Exception as e:
-        msg = "create chatbot failed"
-        logger.info(msg=msg, exc_info=e)
-        raise ChatBaseException(msg, e)
+        raise e_termination("create chatbot failed", e)
 
 
 @app.post("/api/conversation")
@@ -74,7 +80,7 @@ def ask(req: AskRequest):
             res = data
         return OkResponse(res)
     except Exception as e:
-        raise ChatBaseException(simple_message='bot ask failed', exc_info=e)
+        raise e_termination('bot ask failed', e)
 
 
 class DeleteChatRequest(BaseModel):
@@ -92,9 +98,39 @@ def delete_conversation(req: DeleteChatRequest):
         bot.delete_conversation(req.conversation_id)
         return OkResponse({"success": True})
     except Exception as e:
-        msg = "create chatbot failed"
-        logger.info(msg=msg, exc_info=e)
-        raise ChatBaseException(simple_message=msg, exc_info=e)
+        raise e_termination("create chatbot failed", e)
+
+
+class QaRequest(BaseModel):
+    model: str = "text-davinci-003"
+    api_key: str
+    prompt: str
+    max_tokens: int = 2048
+    temperature: float = 0.8
+
+
+@app.post("/api/qa")
+def qa(req: QaRequest):
+    url = 'https://api.openai.com/v1/completions'
+    headers = {
+        'Content-Type': 'application/json',
+        'Authorization': 'Bearer ' + req.api_key
+    }
+    data = {
+        'model': req.model,
+        'prompt': req.prompt,
+        'max_tokens': req.max_tokens,
+        'temperature': req.temperature,
+    }
+
+    try:
+        response = requests.post(url, headers=headers, json=data)
+        content = dict(json.loads(response.content))
+        if 'error' in content:
+            raise ChatBaseException(content)
+        return OkResponse(content)
+    except Exception as e:
+        raise e_termination('qa failed detail_id', e)
 
 
 @app.get("/active")
